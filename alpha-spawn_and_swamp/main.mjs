@@ -457,21 +457,21 @@ const maintainDefenders = (spawn, maxDefenders) => {
   const enemyCreeps = getObjectsByPrototype(Creep).filter((i) => !i.my);
   for (const defender of getCreepsByRole("defender")) {
     const enemyCreep = getClosestTo(defender, enemyCreeps);
-    const distance = getDistance(defender, enemyCreep);
-    if (!!enemyCreep && distance <= 15) {
-      if (distance <= 2) {
-        const directionOfNearestEnemy = getDirectionTo(enemyCreep, defender);
-        const oppositeDirection = getOppositeDirection(directionOfNearestEnemy);
-        const direction = convertDirectionToConstant(oppositeDirection);
-        if (!!direction) {
-          defender.move(direction);
-        }
-      }
+    if (!!enemyCreep && getDistance(defender, enemyCreep) <= 15) {
       if (defender.rangedAttack(enemyCreep) == ERR_NOT_IN_RANGE) {
         defender.moveTo(enemyCreep);
       }
     } else {
-      defender.moveTo(spawn);
+      if (getDistance(defender, spawn) > 3) {
+        defender.moveTo(spawn);
+      } else {
+        const directionToSpawn = getDirectionTo(spawn, defender);
+        const oppositeDirection = getOppositeDirection(directionToSpawn);
+        const direction = convertDirectionToConstant(oppositeDirection);
+        if (direction !== undefined) {
+          defender.move(direction);
+        }
+      }
     }
   }
 };
@@ -483,5 +483,5 @@ export function loop() {
   maintainGatherers(spawn, 3, [MOVE, MOVE, MOVE, MOVE, CARRY, CARRY, CARRY]);
   maintainTowers(spawn, 2, 1);
   maintainDefenders(spawn, 4);
-  maintainAttackers(spawn, 10, 1, 1, 1);
+  maintainAttackers(spawn, 10, 0, 2, 1);
 }
