@@ -26,13 +26,13 @@ const getCreepsByRoleInCompany = (role, company) => {
     return filterByRole(getCreepsByCompany(company), role);
 }
 
-const getClosestEnemyTo = (enemies, creep) => {
-    return enemies.reduce((acc, enemy) => {
-        if (getDistance(creep, enemy) < getDistance(creep, acc)) {
-            return enemy;
+const getClosestTo = (creep, container) => {
+    return container.reduce((acc, element) => {
+        if (getDistance(creep, element) < getDistance(creep, acc)) {
+            return element;
         }
         return acc;
-    }, enemies[0])
+    }, container[0])
 ;}
 
 
@@ -69,12 +69,9 @@ const maintainGatherers = (spawn, count, params) => {
     if (gathererCreeps.length < count && !spawn.spawning) {
         spawnUnit(["gatherer"], spawn, params)
     }
-    const nearestNonEmptyContainer = getObjectsByPrototype(StructureContainer).reduce((acc, container) => {
-        if (container.store[RESOURCE_ENERGY] > 0 && getDistance(spawn, container) < getDistance(spawn, acc)) {
-            return container;
-        }
-        return acc;
-    }, getObjectsByPrototype(StructureContainer)[0]);
+    const containers = getObjectsByPrototype(StructureContainer)
+    const nonEmptyContainers = containers.filter(i => i.store[RESOURCE_ENERGY] > 0);
+    const nearestNonEmptyContainer = getClosestTo(spawn, nonEmptyContainers);
     for (const creep of getCreepsByRole('gatherer')) {
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
             if (creep.withdraw(nearestNonEmptyContainer, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
@@ -118,7 +115,7 @@ const maintainCompany = (companyId) => {
     const enemies = getObjectsByPrototype(Creep).filter(i => !i.my);
     const nonHealers = company.filter(i => !i["memory"].roles.includes("healer"));
     if (enemies.length > 0) {
-        const nearestEnemy = getClosestEnemyTo(enemies, leader);
+        const nearestEnemy = getClosestTo(leader, enemies);
         if (getDistance(leader, nearestEnemy) < 10) {
             for (const creep of nonHealers) {
                 if (creep.rangedAttack(nearestEnemy) == ERR_NOT_IN_RANGE || creep.attack(nearestEnemy) == ERR_NOT_IN_RANGE) {
@@ -205,9 +202,9 @@ const maintainAttackers = (spawn, meleeCount, rangedCount, healCount) => {
 }
 
 export function loop() {
-    const spawn = getObjectsByPrototype(StructureSpawn)[0];
+    const spawn = getObjectsByPrototype(StructureSpawn).find(i => i.my);
     spawning = spawn.spawning !== undefined;
 
-    maintainGatherers(spawn, 3, [MOVE, MOVE, CARRY, CARRY]);
+    maintainGatherers(spawn, 3, [MOVE, MOVE, MOVE, MOVE, CARRY, CARRY, CARRY]);
     maintainAttackers(spawn, 1, 1, 1);
 }
