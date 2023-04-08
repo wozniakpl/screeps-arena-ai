@@ -22,6 +22,14 @@ import {
   HEAL,
   WORK,
   TERRAIN_WALL,
+  BOTTOM_RIGHT,
+  TOP_RIGHT,
+  RIGHT,
+  TOP,
+  BOTTOM,
+  TOP_LEFT,
+  LEFT,
+  BOTTOM_LEFT,
 } from "game/constants";
 
 const getMyCreeps = () => {
@@ -122,6 +130,42 @@ const spawnBuilderUnit = (spawn, params) => {
 const getDistance = (a, b) => {
   // return findPath(a, b).length; // CPU heavy
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+};
+
+const getDirectionTo = (to, from) => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return {
+    x: dx > 0 ? 1 : dx < 0 ? -1 : 0,
+    y: dy > 0 ? 1 : dy < 0 ? -1 : 0,
+  };
+};
+
+const getOppositeDirection = (direction) => {
+  return {
+    x: direction.x * -1,
+    y: direction.y * -1,
+  };
+};
+
+const convertDirectionToConstant = (direction) => {
+  return {
+    1: {
+      1: TOP_RIGHT,
+      0: RIGHT,
+      "-1": BOTTOM_RIGHT,
+    },
+    0: {
+      1: TOP,
+      0: undefined,
+      "-1": BOTTOM,
+    },
+    "-1": {
+      1: TOP_LEFT,
+      0: LEFT,
+      "-1": BOTTOM_LEFT,
+    },
+  }[direction.x][direction.y];
 };
 
 const maintainGatherers = (spawn, count, params) => {
@@ -407,15 +451,22 @@ const maintainDefenders = (spawn, maxDefenders) => {
       TOUGH,
       TOUGH,
       TOUGH,
-      TOUGH,
-      TOUGH,
     ]);
   }
 
   const enemyCreeps = getObjectsByPrototype(Creep).filter((i) => !i.my);
   for (const defender of getCreepsByRole("defender")) {
     const enemyCreep = getClosestTo(defender, enemyCreeps);
-    if (!!enemyCreep && getDistance(defender, enemyCreep) < 15) {
+    const distance = getDistance(defender, enemyCreep);
+    if (!!enemyCreep && distance <= 15) {
+      if (distance <= 2) {
+        const directionOfNearestEnemy = getDirectionTo(enemyCreep, defender);
+        const oppositeDirection = getOppositeDirection(directionOfNearestEnemy);
+        const direction = convertDirectionToConstant(oppositeDirection);
+        if (!!direction) {
+          defender.move(direction);
+        }
+      }
       if (defender.rangedAttack(enemyCreep) == ERR_NOT_IN_RANGE) {
         defender.moveTo(enemyCreep);
       }
@@ -431,6 +482,6 @@ export function loop() {
 
   maintainGatherers(spawn, 3, [MOVE, MOVE, MOVE, MOVE, CARRY, CARRY, CARRY]);
   maintainTowers(spawn, 2, 1);
-  maintainDefenders(spawn, 2);
-  maintainAttackers(spawn, 5, 1, 1, 1);
+  maintainDefenders(spawn, 4);
+  maintainAttackers(spawn, 10, 1, 1, 1);
 }
