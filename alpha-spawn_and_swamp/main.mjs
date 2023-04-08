@@ -1,5 +1,15 @@
-import { getObjectsByPrototype } from "game/utils";
-import { Creep, StructureSpawn, StructureContainer } from "game/prototypes";
+import {
+  createConstructionSite,
+  getObjectsByPrototype,
+  getTerrainAt,
+} from "game/utils";
+import {
+  Creep,
+  StructureSpawn,
+  StructureContainer,
+  ConstructionSite,
+  StructureTower,
+} from "game/prototypes";
 import {
   MOVE,
   CARRY,
@@ -10,6 +20,8 @@ import {
   TOUGH,
   ATTACK,
   HEAL,
+  WORK,
+  TERRAIN_WALL,
 } from "game/constants";
 
 const getMyCreeps = () => {
@@ -49,6 +61,34 @@ const getClosestTo = (creep, container) => {
   }, container[0]);
 };
 
+const isAvailableToBuild = (position) => {
+  const terrain = getTerrainAt(position);
+  const containers = getObjectsByPrototype(StructureContainer);
+  const spawns = getObjectsByPrototype(StructureSpawn);
+  const constructionSites = getObjectsByPrototype(ConstructionSite);
+  const objectsPositions = [...containers, ...spawns, ...constructionSites].map(
+    (i) => ({ x: i.x, y: i.y })
+  );
+  const occupied = objectsPositions.some(
+    (i) => i.x === position.x && i.y === position.y
+  );
+  return terrain !== TERRAIN_WALL && !occupied;
+};
+
+const getPlaceToBuild = (spawn) => {
+  const x = spawn.x;
+  const y = spawn.y;
+  const positions = [];
+  for (let i = 2; i <= 4; i++) {
+    positions.push({ x: x + i, y: y });
+    positions.push({ x: x - i, y: y });
+    positions.push({ x: x, y: y + i });
+    positions.push({ x: x, y: y - i });
+  }
+  const freePositions = positions.filter((i) => isAvailableToBuild(i));
+  return freePositions[Math.floor(Math.random() * freePositions.length)];
+};
+
 var spawning = false;
 const spawnUnit = (roles, spawn, params) => {
   if (spawning) {
@@ -69,6 +109,10 @@ const spawnUnit = (roles, spawn, params) => {
 
 const spawnFighterUnit = (roles, spawn, params) => {
   return spawnUnit(roles.concat(["fighter"]), spawn, params);
+};
+
+const spawnBuilderUnit = (spawn, params) => {
+  return spawnUnit(["builder"], spawn, params);
 };
 
 const getDistance = (a, b) => {
@@ -154,14 +198,14 @@ const maintainCompany = (companyId) => {
   }
 
   const healers = company.filter((i) => i["memory"].roles.includes("healer"));
-  const needsHealing = nonHealers.find((i) => i.hits < i.hitsMax);
+  const needsHealing = nonHealers.filter((i) => i.hits < i.hitsMax);
   if (needsHealing !== undefined) {
     const lowestHits = needsHealing.reduce((acc, creep) => {
       if (creep.hits < acc.hits) {
         return creep;
       }
       return acc;
-    });
+    }, needsHealing[0]);
     for (const creep of healers) {
       if (creep.heal(lowestHits) == ERR_NOT_IN_RANGE) {
         creep.moveTo(lowestHits);
@@ -224,7 +268,6 @@ const maintainAttackers = (
     (i) => getCreepsByCompany(i).length >= meleeCount + rangedCount + healCount
   );
   if (fullCompanies.length >= maxCompanies) {
-    console.log("Max companies reached");
     return;
   }
 
@@ -271,10 +314,58 @@ const maintainAttackers = (
   }
 };
 
+const maintainTowers = (spawn, maxTowers, maxBuilders) => {
+  const builders = getCreepsByRole("builder");
+  if (builders.length < maxBuilders) {
+    spawnBuilderUnit(spawn, [MOVE, CARRY, CARRY, WORK, WORK]);
+  }
+
+  const containers = getObjectsByPrototype(StructureContainer);
+  const availablePlacesWithEnergy = [...containers, spawn].filter(
+    (i) => i.store[RESOURCE_ENERGY] > 0
+  );
+  for (const builder of builders) {
+    if (!builder.store[RESOURCE_ENERGY]) {
+      const nearestEnergy = getClosestTo(builder, availablePlacesWithEnergy);
+      if (
+        builder.withdraw(nearestEnergy, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE
+      ) {
+        builder.moveTo(nearestEnergy);
+      }
+    } else {
+      const towersBuilt = getObjectsByPrototype(StructureTower);
+      const towersWithoutEnergy = towersBuilt.find(
+        (i) => i.store[RESOURCE_ENERGY] < 50
+      );
+      if (towersWithoutEnergy) {
+        if (
+          builder.transfer(towersWithoutEnergy, RESOURCE_ENERGY) ==
+          ERR_NOT_IN_RANGE
+        ) {
+          builder.moveTo(towersWithoutEnergy);
+        }
+      } else if (towersBuilt.length < maxTowers) {
+        const constructionSite = getObjectsByPrototype(ConstructionSite).find(
+          (i) => i.my
+        );
+        if (!constructionSite) {
+          const placeToBuild = getPlaceToBuild(spawn);
+          createConstructionSite(placeToBuild, StructureTower);
+        } else {
+          if (builder.build(constructionSite) == ERR_NOT_IN_RANGE) {
+            builder.moveTo(constructionSite);
+          }
+        }
+      }
+    }
+  }
+};
+
 export function loop() {
   const spawn = getObjectsByPrototype(StructureSpawn).find((i) => i.my);
   spawning = spawn.spawning !== undefined;
 
   maintainGatherers(spawn, 3, [MOVE, MOVE, MOVE, MOVE, CARRY, CARRY, CARRY]);
-  maintainAttackers(spawn, 2, 1, 1, 1);
+  maintainTowers(spawn, 3, 1);
+  maintainAttackers(spawn, 5, 1, 1, 1);
 }
