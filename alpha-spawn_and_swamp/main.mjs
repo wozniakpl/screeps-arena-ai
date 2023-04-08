@@ -228,21 +228,23 @@ const maintainCompany = (companyId) => {
     (i) => !i["memory"].roles.includes("leader")
   );
   const enemySpawn = getObjectsByPrototype(StructureSpawn).find((i) => !i.my);
-  if (
-    (!!leader && leader.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE) ||
-    leader.attack(enemySpawn) == ERR_NOT_IN_RANGE
-  ) {
-    const isNotToofar = followers.reduce((acc, follower) => {
-      if (getDistance(leader, follower) > 6) {
-        return false;
+  if (!!leader) {
+    if (
+      leader.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE ||
+      leader.attack(enemySpawn) == ERR_NOT_IN_RANGE
+    ) {
+      const isNotToofar = followers.reduce((acc, follower) => {
+        if (getDistance(leader, follower) > 6) {
+          return false;
+        }
+        return acc;
+      }, true);
+      if (isNotToofar) {
+        leader.moveTo(enemySpawn);
       }
-      return acc;
-    }, true);
-    if (isNotToofar) {
-      leader.moveTo(enemySpawn);
-    }
-    for (const follower of followers) {
-      follower.moveTo(leader);
+      for (const follower of followers) {
+        follower.moveTo(leader);
+      }
     }
   } else {
     for (const nonHealer of nonHealers) {
@@ -331,6 +333,7 @@ const maintainTowers = (spawn, maxTowers, maxBuilders) => {
     spawnBuilderUnit(spawn, [MOVE, CARRY, CARRY, WORK, WORK]);
   }
 
+  const towersBuilt = getObjectsByPrototype(StructureTower);
   const containers = getObjectsByPrototype(StructureContainer);
   const availablePlacesWithEnergy = [...containers, spawn].filter(
     (i) => i.store[RESOURCE_ENERGY] > 0
@@ -344,7 +347,6 @@ const maintainTowers = (spawn, maxTowers, maxBuilders) => {
         builder.moveTo(nearestEnergy);
       }
     } else {
-      const towersBuilt = getObjectsByPrototype(StructureTower);
       const towersWithoutEnergy = towersBuilt.find(
         (i) => i.store[RESOURCE_ENERGY] < 50
       );
@@ -367,6 +369,29 @@ const maintainTowers = (spawn, maxTowers, maxBuilders) => {
             builder.moveTo(constructionSite);
           }
         }
+      }
+    }
+  }
+
+  const enemies = getObjectsByPrototype(Creep).filter((i) => !i.my);
+  for (const tower of towersBuilt) {
+    const enemy = getClosestTo(tower, enemies);
+    if (!!enemy && getDistance(tower, enemy) <= 20) {
+      tower.attack(enemy);
+    }
+  }
+
+  const hurtDefenders = getCreepsByRole("defender").filter(
+    (i) => i.hits < i.hitsMax
+  );
+  if (!!hurtDefenders) {
+    for (const tower of towersBuilt) {
+      const nearestHurtDefender = getClosestTo(tower, hurtDefenders);
+      if (
+        !!nearestHurtDefender &&
+        getDistance(tower, nearestHurtDefender) <= 20
+      ) {
+        tower.heal(nearestHurtDefender);
       }
     }
   }
