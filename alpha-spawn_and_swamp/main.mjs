@@ -111,6 +111,10 @@ const spawnFighterUnit = (roles, spawn, params) => {
   return spawnUnit(roles.concat(["fighter"]), spawn, params);
 };
 
+const spawnDefenderUnit = (spawn, params) => {
+  return spawnFighterUnit(["defender"], spawn, params);
+};
+
 const spawnBuilderUnit = (spawn, params) => {
   return spawnUnit(["builder"], spawn, params);
 };
@@ -160,18 +164,21 @@ const maintainCompany = (companyId) => {
     );
     if (melee !== undefined) {
       melee["memory"].roles.push("leader");
+      console.log(`Assigning meelee leader to company ${companyId}`);
     } else {
       const ranged = company.find((i) =>
         i["memory"].roles.includes("rangedAttacker")
       );
       if (ranged !== undefined) {
         ranged["memory"].roles.push("leader");
+        console.log(`Assigning ranged leader to company ${companyId}`);
       } else {
         const healers = company.filter((i) =>
           i["memory"].roles.includes("healer")
         );
         for (const healer of healers) {
           healer["memory"].company = undefined;
+          console.log(`Removing healer from company ${companyId}`);
         }
       }
     }
@@ -184,14 +191,18 @@ const maintainCompany = (companyId) => {
     (i) => !i["memory"].roles.includes("healer")
   );
   if (enemies.length > 0) {
-    const nearestEnemy = getClosestTo(leader, enemies);
-    if (getDistance(leader, nearestEnemy) < 10) {
-      for (const creep of nonHealers) {
-        if (
-          creep.rangedAttack(nearestEnemy) == ERR_NOT_IN_RANGE ||
-          creep.attack(nearestEnemy) == ERR_NOT_IN_RANGE
-        ) {
-          creep.moveTo(nearestEnemy);
+    if (leader === undefined) {
+      console.log(`No leader in company ${companyId}!`);
+    } else {
+      const nearestEnemy = getClosestTo(leader, enemies);
+      if (getDistance(leader, nearestEnemy) < 10) {
+        for (const creep of nonHealers) {
+          if (
+            creep.rangedAttack(nearestEnemy) == ERR_NOT_IN_RANGE ||
+            creep.attack(nearestEnemy) == ERR_NOT_IN_RANGE
+          ) {
+            creep.moveTo(nearestEnemy);
+          }
         }
       }
     }
@@ -218,7 +229,7 @@ const maintainCompany = (companyId) => {
   );
   const enemySpawn = getObjectsByPrototype(StructureSpawn).find((i) => !i.my);
   if (
-    leader.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE ||
+    (!!leader && leader.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE) ||
     leader.attack(enemySpawn) == ERR_NOT_IN_RANGE
   ) {
     const isNotToofar = followers.reduce((acc, follower) => {
@@ -361,11 +372,40 @@ const maintainTowers = (spawn, maxTowers, maxBuilders) => {
   }
 };
 
+const maintainDefenders = (spawn, maxDefenders) => {
+  const defenders = getCreepsByRole("defender");
+  if (defenders.length < maxDefenders) {
+    spawnDefenderUnit(spawn, [
+      MOVE,
+      RANGED_ATTACK,
+      RANGED_ATTACK,
+      TOUGH,
+      TOUGH,
+      TOUGH,
+      TOUGH,
+      TOUGH,
+    ]);
+  }
+
+  const enemyCreeps = getObjectsByPrototype(Creep).filter((i) => !i.my);
+  for (const defender of getCreepsByRole("defender")) {
+    const enemyCreep = getClosestTo(defender, enemyCreeps);
+    if (!!enemyCreep && getDistance(defender, enemyCreep) < 15) {
+      if (defender.rangedAttack(enemyCreep) == ERR_NOT_IN_RANGE) {
+        defender.moveTo(enemyCreep);
+      }
+    } else {
+      defender.moveTo(spawn);
+    }
+  }
+};
+
 export function loop() {
   const spawn = getObjectsByPrototype(StructureSpawn).find((i) => i.my);
   spawning = spawn.spawning !== undefined;
 
   maintainGatherers(spawn, 3, [MOVE, MOVE, MOVE, MOVE, CARRY, CARRY, CARRY]);
-  maintainTowers(spawn, 3, 1);
+  maintainTowers(spawn, 2, 1);
+  maintainDefenders(spawn, 2);
   maintainAttackers(spawn, 5, 1, 1, 1);
 }
