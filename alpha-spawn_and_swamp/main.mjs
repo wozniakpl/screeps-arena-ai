@@ -336,6 +336,7 @@ const maintainAttackers = (
     var fighter = spawnFighterUnit(["meleeAttacker"], spawn, [
       MOVE,
       MOVE,
+      MOVE,
       ATTACK,
       ATTACK,
       TOUGH,
@@ -355,6 +356,8 @@ const maintainAttackers = (
     var ranger = spawnFighterUnit(["rangedAttacker"], spawn, [
       MOVE,
       MOVE,
+      MOVE,
+      MOVE,
       RANGED_ATTACK,
       RANGED_ATTACK,
     ]);
@@ -364,7 +367,13 @@ const maintainAttackers = (
   }
   const healerCreeps = getCreepsByRoleInCompany("healer", companies);
   if (healerCreeps.length < healCount && !spawn.spawning) {
-    var healer = spawnFighterUnit(["healer"], spawn, [MOVE, MOVE, HEAL, HEAL]);
+    var healer = spawnFighterUnit(["healer"], spawn, [
+      MOVE,
+      MOVE,
+      MOVE,
+      HEAL,
+      HEAL,
+    ]);
     if (healer !== undefined) {
       healer["memory"].company = companies;
     }
@@ -455,22 +464,26 @@ const maintainDefenders = (spawn, maxDefenders) => {
   }
 
   const enemyCreeps = getObjectsByPrototype(Creep).filter((i) => !i.my);
-  for (const defender of getCreepsByRole("defender")) {
-    const enemyCreep = getClosestTo(defender, enemyCreeps);
-    if (!!enemyCreep && getDistance(defender, enemyCreep) <= 15) {
-      if (defender.rangedAttack(enemyCreep) == ERR_NOT_IN_RANGE) {
-        defender.moveTo(enemyCreep);
-      }
-    } else {
-      if (getDistance(defender, spawn) > 3) {
-        defender.moveTo(spawn);
-      } else {
-        const directionToSpawn = getDirectionTo(spawn, defender);
-        const oppositeDirection = getOppositeDirection(directionToSpawn);
-        const direction = convertDirectionToConstant(oppositeDirection);
-        if (direction !== undefined) {
-          defender.move(direction);
+  if (enemyCreeps.length > 0) {
+    for (const defender of getCreepsByRole("defender")) {
+      const enemyCreep = getClosestTo(defender, enemyCreeps);
+      if (getDistance(defender, enemyCreep) <= 15) {
+        if (defender.rangedAttack(enemyCreep) == ERR_NOT_IN_RANGE) {
+          defender.moveTo(enemyCreep);
         }
+      }
+    }
+  }
+
+  for (const defender of getCreepsByRole("defender")) {
+    if (getDistance(defender, spawn) > 3) {
+      defender.moveTo(spawn);
+    } else {
+      const directionToSpawn = getDirectionTo(spawn, defender);
+      const oppositeDirection = getOppositeDirection(directionToSpawn);
+      const direction = convertDirectionToConstant(oppositeDirection);
+      if (direction !== undefined) {
+        defender.move(direction);
       }
     }
   }
