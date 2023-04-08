@@ -1,22 +1,39 @@
 import { getObjectsByPrototype } from 'game/utils';
-import { Creep, StructureSpawn, Source, StructureContainer} from 'game/prototypes';
-import { MOVE, CARRY, WORK, RESOURCE_ENERGY, ERR_NOT_IN_RANGE, BODYPART_COST, RANGED_ATTACK, TOUGH, ATTACK, HEAL } from 'game/constants';
+import { Creep, StructureSpawn, StructureContainer} from 'game/prototypes';
+import { MOVE, CARRY, RESOURCE_ENERGY, ERR_NOT_IN_RANGE, BODYPART_COST, RANGED_ATTACK, TOUGH, ATTACK, HEAL } from 'game/constants';
 
 const getMyCreeps = () => {
     return getObjectsByPrototype(Creep).filter(i => i.my);
 }
 
+const filterByRole = (creeps, role) => {
+    return creeps.filter(i => i["memory"] !== undefined && i["memory"].roles.includes(role));
+}
+
+const filterByCompany = (creeps, company) => {
+    return creeps.filter(i => i["memory"] !== undefined && i["memory"].company === company);
+}
+
 const getCreepsByRole = (role) => {
-    return getMyCreeps().filter(i => i["memory"] !== undefined && i["memory"].roles.includes(role));
+    return filterByRole(getMyCreeps(), role);
 }
 
 const getCreepsByCompany = (company) => {
-    return getMyCreeps().filter(i => i["memory"] !== undefined && i["memory"].company === company && i["memory"].roles.includes("fighter"));
+    return filterByCompany(getMyCreeps(), company);
 }
 
-const getCreepsUnassignedToCompany = () => {
-    return getCreepsByCompany(undefined);
+const getCreepsByRoleInCompany = (role, company) => {
+    return filterByRole(getCreepsByCompany(company), role);
 }
+
+const getClosestEnemyTo = (enemies, creep) => {
+    return enemies.reduce((acc, enemy) => {
+        if (getDistance(creep, enemy) < getDistance(creep, acc)) {
+            return enemy;
+        }
+        return acc;
+    }, enemies[0])
+;}
 
 
 var spawning = false;
@@ -34,14 +51,16 @@ const spawnUnit = (roles, spawn, params) => {
     creep.memory = {};
     creep.memory.roles = roles;
     spawning = true;
+    return creep;
 }
 
 const spawnFighterUnit = (roles, spawn, params) => {
     return spawnUnit(roles.concat(["fighter"]), spawn, params);
 }
 
-const getDistance = (x1, y1, x2, y2) => {
-    return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+const getDistance = (a, b) => {
+    // return findPath(a, b).length; // CPU heavy
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 
@@ -50,16 +69,16 @@ const maintainGatherers = (spawn, count, params) => {
     if (gathererCreeps.length < count && !spawn.spawning) {
         spawnUnit(["gatherer"], spawn, params)
     }
-    const containerNearestSpawn = getObjectsByPrototype(StructureContainer).reduce((acc, container) => {
-        if (getDistance(spawn.x, spawn.y, container.x, container.y) < getDistance(spawn.x, spawn.y, acc.x, acc.y)) {
+    const nearestNonEmptyContainer = getObjectsByPrototype(StructureContainer).reduce((acc, container) => {
+        if (container.store[RESOURCE_ENERGY] > 0 && getDistance(spawn, container) < getDistance(spawn, acc)) {
             return container;
         }
         return acc;
-    })
+    }, getObjectsByPrototype(StructureContainer)[0]);
     for (const creep of getCreepsByRole('gatherer')) {
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
-            if (creep.withdraw(containerNearestSpawn, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
-                creep.moveTo(containerNearestSpawn);
+            if (creep.withdraw(nearestNonEmptyContainer, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
+                creep.moveTo(nearestNonEmptyContainer);
             }
         } else {
             if (creep.transfer(spawn, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
@@ -99,15 +118,10 @@ const maintainCompany = (companyId) => {
     const enemies = getObjectsByPrototype(Creep).filter(i => !i.my);
     const nonHealers = company.filter(i => !i["memory"].roles.includes("healer"));
     if (enemies.length > 0) {
-        const nearestEnemy = enemies.reduce((acc, enemy) => {
-            if (getDistance(leader.x, leader.y, enemy.x, enemy.y) < getDistance(leader.x, leader.y, acc.x, acc.y)) {
-                return enemy;
-            }
-            return acc;
-        })
-        if (getDistance(leader.x, leader.y, nearestEnemy.x, nearestEnemy.y) < 10) {
+        const nearestEnemy = getClosestEnemyTo(enemies, leader);
+        if (getDistance(leader, nearestEnemy) < 10) {
             for (const creep of nonHealers) {
-                if (creep.attack(nearestEnemy) == ERR_NOT_IN_RANGE) {
+                if (creep.rangedAttack(nearestEnemy) == ERR_NOT_IN_RANGE || creep.attack(nearestEnemy) == ERR_NOT_IN_RANGE) {
                     creep.moveTo(nearestEnemy);
                 }
             }
@@ -115,23 +129,26 @@ const maintainCompany = (companyId) => {
     }
 
     const healers = company.filter(i => i["memory"].roles.includes("healer"));
-    for (const creep of healers) {
-        const needsHealing = nonHealers.reduce((acc, creep) => {
+    const needsHealing = nonHealers.find(i => i.hits < i.hitsMax)
+    if (needsHealing !== undefined) {
+        const lowestHits = needsHealing.reduce((acc, creep) => {
             if (creep.hits < acc.hits) {
                 return creep;
             }
             return acc;
         })
-        if (creep.heal(needsHealing) == ERR_NOT_IN_RANGE) {
-            creep.moveTo(needsHealing);
+        for (const creep of healers) {
+            if (creep.heal(lowestHits) == ERR_NOT_IN_RANGE) {
+                creep.moveTo(lowestHits);
+            }
         }
     }
 
     const followers = company.filter(i => !i["memory"].roles.includes("leader"));
     const enemySpawn = getObjectsByPrototype(StructureSpawn).find(i => !i.my);
-    if (leader.attack(enemySpawn) == ERR_NOT_IN_RANGE) {
+    if (leader.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE || leader.attack(enemySpawn) == ERR_NOT_IN_RANGE) {
         const isNotToofar = followers.reduce((acc, follower) => {
-            if (getDistance(leader.x, leader.y, follower.x, follower.y) > 6) {
+            if (getDistance(leader, follower) > 6) {
                 return false;
             }
             return acc;
@@ -144,7 +161,7 @@ const maintainCompany = (companyId) => {
         }
     } else {
         for (const nonHealer of nonHealers) {
-            if (nonHealer.attack(enemySpawn) == ERR_NOT_IN_RANGE) {
+            if (nonHealer.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE || nonHealer.attack(enemySpawn) == ERR_NOT_IN_RANGE) {
                 nonHealer.moveTo(enemySpawn);
             }
         }
@@ -154,27 +171,35 @@ const maintainCompany = (companyId) => {
 
 var companies = 0;
 const maintainAttackers = (spawn, meleeCount, rangedCount, healCount) => {
-    const meleeAttackerCreeps = getCreepsByRole('meleeAttacker');
+    const meleeAttackerCreeps = getCreepsByRoleInCompany('meleeAttacker', companies);
     if (meleeAttackerCreeps.length < meleeCount && !spawn.spawning) {
-        spawnFighterUnit(["meleeAttacker"], spawn, [MOVE, MOVE, ATTACK, ATTACK, TOUGH, TOUGH, TOUGH, TOUGH])
-    }
-    const rangedAttackerCreeps = getCreepsByRole('rangedAttacker');
-    if (rangedAttackerCreeps.length < rangedCount && !spawn.spawning) {
-        spawnFighterUnit(["rangedAttacker"], spawn, [MOVE, MOVE, RANGED_ATTACK, RANGED_ATTACK])
-    }
-    const healerCreeps = getCreepsByRole('healer');
-    if (healerCreeps.length < healCount && !spawn.spawning) {
-        spawnFighterUnit(["healer"], spawn, [MOVE, MOVE, HEAL, HEAL])
-    }
-    const allNotInCompany = getCreepsUnassignedToCompany();
-    if (allNotInCompany.length === meleeCount + rangedCount + healCount) {
-        for (const creep of allNotInCompany) {
-            creep["memory"].company = companies;
+        var fighter = spawnFighterUnit(["meleeAttacker"], spawn, [MOVE, MOVE, ATTACK, ATTACK, TOUGH, TOUGH, TOUGH, TOUGH])
+        if (fighter !== undefined) {
+            fighter["memory"].company = companies;
         }
+    }
+    const rangedAttackerCreeps = getCreepsByRoleInCompany('rangedAttacker', companies);
+    if (rangedAttackerCreeps.length < rangedCount && !spawn.spawning) {
+        var ranger = spawnFighterUnit(["rangedAttacker"], spawn, [MOVE, MOVE, RANGED_ATTACK, RANGED_ATTACK])
+        if (ranger !== undefined) {
+            ranger["memory"].company = companies;
+        }
+    }
+    const healerCreeps = getCreepsByRoleInCompany('healer', companies);
+    if (healerCreeps.length < healCount && !spawn.spawning) {
+        var healer = spawnFighterUnit(["healer"], spawn, [MOVE, MOVE, HEAL, HEAL])
+        if (healer !== undefined) {
+            healer["memory"].company = companies;
+        }
+    }
+    const allInCompany = getCreepsByRoleInCompany("fighter", companies)
+    if (allInCompany.length === meleeCount + rangedCount + healCount) {
         companies++;
     }
 
-    for (var companyId=0; companyId<companies; companyId++) {
+    // if it's <=, the creeps will start to move from the very beginning
+    // and not wait for the others to spawn
+    for (var companyId=0; companyId < companies; companyId++) {
         maintainCompany(companyId);   
     }
 }
@@ -184,5 +209,5 @@ export function loop() {
     spawning = spawn.spawning !== undefined;
 
     maintainGatherers(spawn, 3, [MOVE, MOVE, CARRY, CARRY]);
-    maintainAttackers(spawn, 2, 2, 1);
+    maintainAttackers(spawn, 1, 1, 1);
 }
