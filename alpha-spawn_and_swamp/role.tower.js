@@ -8,6 +8,7 @@ export default {
             if (enemies.length > 0) {
                 const nearest = get.closest(tower, enemies);
                 if (get.distance(tower, nearest) <= 7) {
+                    console.log(`Tower ${tower.id} is attacking ${nearest.id}`)
                     tower.attack(nearest);
                 }
             }

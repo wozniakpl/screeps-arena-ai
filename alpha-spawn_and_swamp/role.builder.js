@@ -10,6 +10,7 @@ import {
 import {
     StructureTower
 } from 'game/prototypes';
+import go from './go';
 
 const role = "builder";
 
@@ -26,28 +27,28 @@ export default {
         creeps.forEach(creep => {
             if (!creep.store[RESOURCE_ENERGY]) {
                 const nearestEnergy = get.closest(creep, energySources);
-                console.log(`Creep ${creep.id} is going to withdraw energy from ${nearestEnergy.id}`)
+                console.log(`Creep ${creep['memory'].role}-${creep.id} is going to withdraw energy from ${nearestEnergy.id}`)
                 if (creep.withdraw(nearestEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     console.log(`Creep ${creep['memory'].role}-${creep.id} is moving to ${nearestEnergy.id}`)
-                    creep.moveTo(nearestEnergy);
+                    go.to(creep, nearestEnergy);
                 }
             } else {
                 const towersWithoutEnergy = towers.filter(tower => tower.store[RESOURCE_ENERGY] < tower.store.getCapacity(RESOURCE_ENERGY));
+                const constructionSites = get.constructionSites();
                 if (towersWithoutEnergy.length > 0) {
                     const nearestTowerWithoutEnergy = get.closest(creep, towersWithoutEnergy);
-                    console.log(`Creep ${creep.id} is going to transfer energy to ${nearestTowerWithoutEnergy.id}`)
+                    console.log(`Creep ${creep['memory'].role}-${creep.id} is going to transfer energy to ${nearestTowerWithoutEnergy.id}`)
                     if (creep.transfer(nearestTowerWithoutEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                         console.log(`Creep ${creep['memory'].role}-${creep.id} is moving to ${nearestTowerWithoutEnergy.id}`)
-                        creep.moveTo(nearestTowerWithoutEnergy);
+                        go.to(creep, nearestTowerWithoutEnergy);
                     }
-                } else if (towers.length < towersCount) {
-                    const constructionSites = get.constructionSites();
+                } else if (constructionSites.length + towers.length < towersCount) {
                     if (constructionSites.length > 0) {
                         const nearestConstructionSite = get.closest(creep, constructionSites);
                         console.log(`Creep ${creep.id} is going to build ${nearestConstructionSite.id}`)
                         if (creep.build(nearestConstructionSite) === ERR_NOT_IN_RANGE) {
                             console.log(`Creep ${creep['memory'].role}-${creep.id} is moving to ${nearestConstructionSite.id}`)
-                            creep.moveTo(nearestConstructionSite);
+                            go.to(creep, nearestConstructionSite);
                         }
                     } else {
                         const placeToBuild = get.placeToBuildTower(spawn);
